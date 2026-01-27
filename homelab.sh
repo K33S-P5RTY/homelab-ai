@@ -55,41 +55,23 @@ print_info "System resources – RAM: ${mem_gb}GB, Free disk: ${disk_gb}GB"
 # 4 – Network detection & defaults (can be overridden)
 # -------------------------------------------------------------------------
 print_step "Network detection"
-# 4.1 – Determine interface from default route (if any)
-DEFAULT_IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}') }"
-# 4.2 – Verify that the interface actually exists
-if [[ -n "$DEFAULT_IFACE" ]] && ip link show "$DEFAULT_IFACE" >/dev/null 2>&1; then
-    IFACE="$DEFAULT_IFACE"
-    print_info "Using default‑route interface: $IFACE"
-else
-    print_warn "Default‑route interface '$DEFAULT_IFACE' not found or has no link. Trying to auto‑detect a usable interface..."
-    # Pick the first interface that has a global IPv4 address
-    IFACE=$(ip -4 addr show scope global | awk '/inet / {print $NF; exit}')
-    if [[ -z "$IFACE" ]]; then
-        print_error "No suitable network interface detected. Please set the IFACE environment variable manually before re‑running the script."
-    fi
-    print_info "Auto‑detected interface: $IFACE"
-fi
-
-# 4.3 – Gather current addressing info for the chosen interface
+IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}') }"
+[[ -n "$IFACE" ]] || print_error "Could not determine the primary network interface – set IFACE manually"
+print_info "Using interface: $IFACE"
 CURRENT_CIDR=$(ip -4 addr show dev "$IFACE" scope global | awk '/inet / {print $2; exit}')
 [[ -n "$CURRENT_CIDR" ]] || print_error "Interface $IFACE has no IPv4 address"
 CURRENT_IP="${CURRENT_CIDR%/*}"
 DEFAULT_CIDR="${CURRENT_CIDR#*/}"
-# Validate CIDR – force to /24 if bogus
 if [[ "$DEFAULT_CIDR" =~ ^[0-9]{1,2}$ ]] && (( DEFAULT_CIDR >= 8 && DEFAULT_CIDR <= 32 )); then
     CIDR="${CIDR:-$DEFAULT_CIDR}"
 else
     print_warn "Invalid CIDR $DEFAULT_CIDR – forcing /24"
     CIDR="${CIDR:-24}"
 fi
-# Default static IP – keep current network but replace last octet with .27
 DEFAULT_STATIC_IP="$(echo "$CURRENT_IP" | awk -F. '{print $1"."$2"."$3".27"}')"
 STATIC_IP="${STATIC_IP:-$DEFAULT_STATIC_IP}"
-# Gateway – try to read from routing table, fallback to .1
 GATEWAY=$(ip -4 route show dev "$IFACE" | awk '/default via/ {print $3; exit}')
 [[ -z "$GATEWAY" ]] && GATEWAY="${CURRENT_IP%.*}.1"
-
 print_info "Interface $IFACE – $CURRENT_IP/$CIDR (gateway $GATEWAY)"
 print_info "Static IP to be configured: $STATIC_IP/$CIDR"
 
@@ -152,9 +134,8 @@ else
     done
     netplan generate && netplan apply || print_error "Restoration also failed – manual intervention required"
 fi
-
 # -------------------------------------------------------------------------
-# 6 – DNS: Unbound (Quad9 DoT) and safe resolv.conf handling
+# 6 DNS: Unbound (Quad9 DoT) and safe resolv.conf handling
 # -------------------------------------------------------------------------
 print_step "Systemd-resolved & Unbound DNS"
 if systemctl is-active --quiet systemd-resolved; then
@@ -172,6 +153,8 @@ if ! command -v unbound >/dev/null 2>&1; then
 fi
 UNBOUND_CONF_DIR="/etc/unbound/unbound.conf.d"
 mkdir -p "$UNBOUND_CONF_DIR"
+
+# 6.1 Local configuration (LAN access + local domains)
 cat > "$UNBOUND_CONF_DIR/10-local.conf" <<EOF
 server:
     verbosity: 1
@@ -189,21 +172,30 @@ server:
     prefetch: yes
     cache-min-ttl: 300
     cache-max-ttl: 86400
+    # Explicitly set CA bundle for TLS upstream
+    tls-cert-bundle: /etc/ssl/certs/ca-certificates.crt
+
 local-zone: "${DNS_DOMAIN}." static
 local-data: "${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
 local-data: "webui.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
 local-data: "ollama.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
 local-data: "agent.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
 EOF
+
+# 6.2 – Quad9 DoT forwarder
 cat > "$UNBOUND_CONF_DIR/20-quad9.conf" <<EOF
 forward-zone:
     name: "."
-    forward-tls-upstream: yes
     forward-addr: 9.9.9.9@853
     forward-addr: 149.112.112.112@853
+    tls-upstream: yes
 EOF
+
+# 6.3 – Validate and start
 unbound-checkconf || print_error "Unbound configuration test failed"
 systemctl enable --now unbound
+
+# 6.4 – Verify Unbound is listening before touching resolv.conf
 if ss -ltnup | grep -q ":53.*unbound"; then
     print_info "Unbound is listening on port 53 – configuring resolv.conf"
     echo "nameserver 127.0.0.1" > /etc/resolv.conf
@@ -212,7 +204,6 @@ if ss -ltnup | grep -q ":53.*unbound"; then
 else
     print_error "Unbound failed to bind port 53 – leaving existing resolv.conf untouched"
 fi
-
 # -------------------------------------------------------------------------
 # 7 – Install required packages (non‑interactive)
 # -------------------------------------------------------------------------
