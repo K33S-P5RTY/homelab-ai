@@ -80,7 +80,7 @@ else
     CIDR="${CIDR:-24}"
 fi
 
-DEFAULT_STATIC_IP="$(echo "$CURRENT_IP" | awk -F. '{print $1"."$2"."$3".27"}')"
+DEFAULT_STATIC_IP="$(echo "$CURRENT_IP" | awk -F. '{print $1"."$2"."$3".15"}')"
 STATIC_IP="${STATIC_IP:-$DEFAULT_STATIC_IP}"
 
 GATEWAY=$(ip -4 route show dev "$IFACE" | awk '/default via/ {print $3; exit}')
