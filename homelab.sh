@@ -2,305 +2,236 @@
 # =============================================================================
 # ALL-IN-ONE NUC AI SERVER SETUP - Ubuntu 24.04 LTS - Fully Automated & Hardened
 # =============================================================================
-# Author: Agent Zero (2026 edition – fully hardened)
-# This script is non-interactive, idempotent and designed for a private home LAN.
+# Author: Agent Zero (2026 edition – fully hardened, systemd-resolved only)
+# Non-interactive, idempotent, private home LAN focused
 # =============================================================================
-
 set -euo pipefail
 IFS=$'\n\t'
 
 # -------------------------------------------------------------------------
-# 0 – Global constants & defaults (can be overridden via environment variables)
+# 0 – Global constants & defaults (override via env vars if needed)
 # -------------------------------------------------------------------------
-SCRIPT_VERSION="3.2.0-hardened-full"
+SCRIPT_VERSION="3.5.1-hardened-resolved"
 LOG_FILE="/var/log/homelab-setup.log"
 BACKUP_ROOT="/opt/homelab-backups"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
 AI_STACK_DIR="/opt/ai-stack"
 DNS_DOMAIN="ai.local"
-# Users may override IFACE, STATIC_IP and CIDR via env vars before invoking the script.
+RESOLVER_STUB="127.0.0.53"
 
 # -------------------------------------------------------------------------
-# 1 – Logging helpers (all output duplicated to LOG_FILE)
+# 1 – Logging
 # -------------------------------------------------------------------------
 mkdir -p "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1
+
 print_info()  { echo -e "\033[0;32m[INFO]\033[0m $*"; }
 print_warn()  { echo -e "\033[1;33m[WARN]\033[0m $*"; }
-print_error(){ echo -e "\033[0;31m[ERROR]\033[0m $*"; exit 1; }
+print_error() { echo -e "\033[0;31m[ERROR]\033[0m $*"; exit 1; }
 print_step()  { echo -e "\n\033[0;36m===== $1 =====\033[0m"; }
 
-print_info "--- Homelab AI‑stack installer v$SCRIPT_VERSION started $(date) ---"
+print_info "--- Homelab AI-stack installer v$SCRIPT_VERSION started $(date) ---"
 
 # -------------------------------------------------------------------------
-# 2 – Basic sanity checks
+# 2 – Pre-flight checks
 # -------------------------------------------------------------------------
-print_step "Pre‑flight checks"
-[[ "$(id -u)" -eq 0 ]] || print_error "This script must be run as root (or via sudo)"
-source /etc/os-release || print_error "Unable to source /etc/os-release"
-[[ "$ID" == "ubuntu" ]] || print_error "Unsupported OS – this script works on Ubuntu only"
-[[ "$(lsb_release -rs)" == "24.04" ]] || print_warn "Tested on Ubuntu 24.04 – other versions may work but are unsupported"
+print_step "Pre-flight checks"
+
+[[ "$(id -u)" -eq 0 ]] || print_error "Must run as root (or sudo)"
+
+source /etc/os-release || print_error "Cannot source /etc/os-release"
+[[ "$ID" == "ubuntu" ]] || print_error "Only Ubuntu is supported"
+[[ "$(lsb_release -rs)" == "24.04" ]] && print_info "Ubuntu 24.04 detected" || print_warn "Tested on 24.04 – may work on others"
+
+# Disable cloud-init network config
+if [[ -d /etc/cloud/cloud.cfg.d ]]; then
+    echo "network: {config: disabled}" > /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    print_info "Disabled cloud-init network management"
+fi
 
 # -------------------------------------------------------------------------
-# 3 – Verify resources (informational only)
+# 3 – Resource check (informational)
 # -------------------------------------------------------------------------
 mem_gb=$(free -g | awk '/Mem:/ {print $2}')
 disk_gb=$(df -BG / | awk 'NR==2 {sub(/G/,"",$4); print $4}')
-print_info "System resources – RAM: ${mem_gb}GB, Free disk: ${disk_gb}GB"
-(( mem_gb < 8 )) && print_warn "Less than 8 GB RAM – large models may be slow"
-(( disk_gb < 50 )) && print_warn "Less than 50 GB free disk – consider expanding storage"
+print_info "Resources – RAM: ${mem_gb}GB, Free disk: ${disk_gb}GB"
+((mem_gb < 8))  && print_warn "Less than 8GB RAM – large models may be slow"
+((disk_gb < 50)) && print_warn "Less than 50GB free – consider expanding storage"
 
 # -------------------------------------------------------------------------
-# 4 – Network detection & defaults (can be overridden)
+# 4 – Network detection
 # -------------------------------------------------------------------------
 print_step "Network detection"
-IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}') }"
-[[ -n "$IFACE" ]] || print_error "Could not determine the primary network interface – set IFACE manually"
-print_info "Using interface: $IFACE"
+
+IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}')}"
+[[ -n "$IFACE" ]] || print_error "Cannot detect primary interface – set IFACE= manually"
+
 CURRENT_CIDR=$(ip -4 addr show dev "$IFACE" scope global | awk '/inet / {print $2; exit}')
-[[ -n "$CURRENT_CIDR" ]] || print_error "Interface $IFACE has no IPv4 address"
+[[ -n "$CURRENT_CIDR" ]] || print_error "No IPv4 address on $IFACE"
+
 CURRENT_IP="${CURRENT_CIDR%/*}"
 DEFAULT_CIDR="${CURRENT_CIDR#*/}"
-if [[ "$DEFAULT_CIDR" =~ ^[0-9]{1,2}$ ]] && (( DEFAULT_CIDR >= 8 && DEFAULT_CIDR <= 32 )); then
+
+if [[ "$DEFAULT_CIDR" =~ ^[0-9]{1,2}$ ]] && ((DEFAULT_CIDR >= 8 && DEFAULT_CIDR <= 32)); then
     CIDR="${CIDR:-$DEFAULT_CIDR}"
 else
-    print_warn "Invalid CIDR $DEFAULT_CIDR – forcing /24"
+    print_warn "Invalid CIDR detected – forcing /24"
     CIDR="${CIDR:-24}"
 fi
+
 DEFAULT_STATIC_IP="$(echo "$CURRENT_IP" | awk -F. '{print $1"."$2"."$3".27"}')"
 STATIC_IP="${STATIC_IP:-$DEFAULT_STATIC_IP}"
+
 GATEWAY=$(ip -4 route show dev "$IFACE" | awk '/default via/ {print $3; exit}')
 [[ -z "$GATEWAY" ]] && GATEWAY="${CURRENT_IP%.*}.1"
+
 print_info "Interface $IFACE – $CURRENT_IP/$CIDR (gateway $GATEWAY)"
-print_info "Static IP to be configured: $STATIC_IP/$CIDR"
+print_info "Static IP to set: $STATIC_IP/$CIDR"
 
 mkdir -p "$BACKUP_DIR"
 
 # -------------------------------------------------------------------------
-# 5 – Netplan configuration (idempotent & safe)
-# -------------------------------------------------------------------------
-print_step "Netplan configuration"
-NETPLAN_DIR="/etc/netplan"
-NETPLAN_FILE="$NETPLAN_DIR/01-homelab.yaml"
-BACKUP_SUBDIR="$BACKUP_DIR/netplan"
-mkdir -p "$BACKUP_SUBDIR"
-
-# 5.1 – Backup all existing netplan files and disable them
-if compgen -G "$NETPLAN_DIR/*.yaml" > /dev/null; then
-    print_info "Backing up existing netplan files and disabling them…"
-    for f in $NETPLAN_DIR/*.yaml; do
-        [[ "$f" == "$NETPLAN_FILE" ]] && continue
-        cp -a "$f" "$BACKUP_SUBDIR/$(basename "$f").bak"
-        mv "$f" "${f}.disabled"
-        print_info "  • $f → ${f}.disabled (backup stored)"
-    done
-fi
-
-# 5.2 – Write our static‑IP netplan file
-cat > "$NETPLAN_FILE" <<EOF
-network:
-  version: 2
-  renderer: networkd
-  ethernets:
-    $IFACE:
-      dhcp4: no
-      addresses: [$STATIC_IP/$CIDR]
-      routes:
-        - to: default
-          via: $GATEWAY
-          on-link: true
-      nameservers:
-        addresses: [127.0.0.1]
-EOF
-chmod 600 "$NETPLAN_FILE"
-
-# 5.3 – Apply and wait for the IP to appear
-if netplan generate && netplan apply; then
-    print_info "Netplan applied – waiting for $STATIC_IP to become active…"
-    for i in {1..30}; do
-        ip -4 addr show dev "$IFACE" | grep -q "$STATIC_IP" && break
-        sleep 1
-    done
-    ip -4 addr show dev "$IFACE" | grep -q "$STATIC_IP" || print_error "Static IP $STATIC_IP did not appear after netplan apply"
-    print_info "Static IP is now active"
-else
-    print_error "Netplan apply failed – restoring previous configuration"
-    rm -f "$NETPLAN_FILE"
-    for bak in "$BACKUP_SUBDIR"/*.bak; do
-        orig="${bak%.bak}"
-        mv "${orig}.disabled" "${orig}"
-        print_info "  • Restored $orig"
-    done
-    netplan generate && netplan apply || print_error "Restoration also failed – manual intervention required"
-fi
-# -------------------------------------------------------------------------
-# 6 DNS: Unbound (Quad9 DoT) and safe resolv.conf handling
-# -------------------------------------------------------------------------
-print_step "Systemd-resolved & Unbound DNS"
-if systemctl is-active --quiet systemd-resolved; then
-    systemctl stop systemd-resolved
-    systemctl disable systemd-resolved
-fi
-# Backup original resolv.conf if it is a regular file
-if [[ -f /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
-    cp -a /etc/resolv.conf "$BACKUP_DIR/resolv.conf.bak"
-    print_info "Backed up existing /etc/resolv.conf"
-fi
-# Install Unbound if missing
-if ! command -v unbound >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y --no-install-recommends unbound
-fi
-UNBOUND_CONF_DIR="/etc/unbound/unbound.conf.d"
-mkdir -p "$UNBOUND_CONF_DIR"
-
-# 6.1 Local configuration (LAN access + local domains)
-cat > "$UNBOUND_CONF_DIR/10-local.conf" <<EOF
-server:
-    verbosity: 1
-    interface: 0.0.0.0
-    do-ip4: yes
-    do-ip6: no
-    access-control: 127.0.0.0/8 allow
-    access-control: ::1 allow
-    access-control: ${STATIC_IP%.*}.0/${CIDR} allow
-    access-control: 0.0.0.0/0 refuse
-    harden-glue: yes
-    harden-dnssec-stripped: yes
-    qname-minimisation: yes
-    aggressive-nsec: yes
-    prefetch: yes
-    cache-min-ttl: 300
-    cache-max-ttl: 86400
-    # Explicitly set CA bundle for TLS upstream
-    tls-cert-bundle: /etc/ssl/certs/ca-certificates.crt
-
-local-zone: "${DNS_DOMAIN}." static
-local-data: "${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
-local-data: "webui.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
-local-data: "ollama.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
-local-data: "agent.${DNS_DOMAIN}. 3600 IN A $STATIC_IP"
-EOF
-
-# 6.2 – Quad9 DoT forwarder
-cat > "$UNBOUND_CONF_DIR/20-quad9.conf" <<EOF
-forward-zone:
-    name: "."
-    forward-addr: 9.9.9.9@853
-    forward-addr: 149.112.112.112@853
-    tls-upstream: yes
-EOF
-
-# 6.3 – Validate and start
-unbound-checkconf || print_error "Unbound configuration test failed"
-systemctl enable --now unbound
-
-# 6.4 – Verify Unbound is listening before touching resolv.conf
-if ss -ltnup | grep -q ":53.*unbound"; then
-    print_info "Unbound is listening on port 53 – configuring resolv.conf"
-    echo "nameserver 127.0.0.1" > /etc/resolv.conf
-    chmod 644 /etc/resolv.conf
-    chattr +i /etc/resolv.conf 2>/dev/null || true
-else
-    print_error "Unbound failed to bind port 53 – leaving existing resolv.conf untouched"
-fi
-# -------------------------------------------------------------------------
-# 7 – Install required packages (non‑interactive)
+# 5 – Install packages (before network change)
 # -------------------------------------------------------------------------
 print_step "Package installation"
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get upgrade -y -qq
 apt-get install -y --no-install-recommends \
     curl wget gnupg ca-certificates net-tools git ufw nginx \
-    openssh-server htop fail2ban logrotate
+    openssh-server htop fail2ban logrotate iputils-arping
 
 # -------------------------------------------------------------------------
-# 8 – Docker installation, version check and user group setup
+# 6 – Docker
 # -------------------------------------------------------------------------
 print_step "Docker installation"
+
 if ! command -v docker >/dev/null 2>&1; then
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" >/etc/apt/sources.list.d/docker.list
     apt-get update -qq
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
-# Fallback to legacy docker‑compose binary if the plugin is missing
+
 if ! docker compose version >/dev/null 2>&1; then
-    print_warn "Docker compose plugin not available – installing legacy docker‑compose binary"
+    print_warn "Docker compose plugin missing – installing legacy binary"
     curl -L "https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
     ln -sf /usr/local/bin/docker-compose /usr/local/bin/docker-compose-plugin
 fi
+
 DOCKER_USER="${SUDO_USER:-root}"
 usermod -aG docker "$DOCKER_USER" || true
-print_info "Docker installed and $DOCKER_USER added to docker group"
+print_info "Docker ready – $DOCKER_USER in docker group"
 
 # -------------------------------------------------------------------------
-# 9 – Ollama installation with basic verification
+# 7 – Systemd-resolved: Quad9 DoT + idempotent /etc/hosts
+# -------------------------------------------------------------------------
+print_step "DNS configuration (systemd-resolved + Quad9 DoT)"
+
+mkdir -p /etc/systemd/resolved.conf.d
+
+cat >/etc/systemd/resolved.conf.d/quad9-dot.conf <<EOF
+[Resolve]
+DNS=9.9.9.9#dns.quad9.net
+DNS=149.112.112.112#dns.quad9.net
+DNSOverTLS=yes
+FallbackDNS=1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4
+EOF
+
+# Idempotent /etc/hosts update
+HOSTS_MARKER="# AI stack local overrides (added by homelab setup)"
+HOSTS_LINE="$STATIC_IP $DNS_DOMAIN webui.$DNS_DOMAIN ollama.$DNS_DOMAIN agent.$DNS_DOMAIN"
+
+if ! grep -qF "$HOSTS_MARKER" /etc/hosts; then
+    echo "" >> /etc/hosts
+    echo "$HOSTS_MARKER" >> /etc/hosts
+    echo "$HOSTS_LINE" >> /etc/hosts
+    print_info "Added local domains to /etc/hosts"
+else
+    if ! grep -qF "$HOSTS_LINE" /etc/hosts; then
+        echo "$HOSTS_LINE" >> /etc/hosts
+        print_info "Added missing hosts line (marker was present)"
+    else
+        print_info "/etc/hosts already contains local overrides"
+    fi
+fi
+
+systemctl restart systemd-resolved
+
+timeout 5 dig @${RESOLVER_STUB} example.com >/dev/null 2>&1 || print_error "DNS resolution broken after systemd-resolved config"
+print_info "systemd-resolved uses Quad9 DoT + local domains via /etc/hosts"
+
+# -------------------------------------------------------------------------
+# 8 – Ollama
 # -------------------------------------------------------------------------
 print_step "Ollama installation"
+
 if ! command -v ollama >/dev/null 2>&1; then
     TMP_OLLAMA="/tmp/ollama_install.sh"
     curl -fsSL https://ollama.com/install.sh -o "$TMP_OLLAMA"
-    [[ -s "$TMP_OLLAMA" ]] || print_error "Failed to download Ollama installer script"
+    [[ -s "$TMP_OLLAMA" ]] || print_error "Failed to download Ollama installer"
     bash "$TMP_OLLAMA"
     rm -f "$TMP_OLLAMA"
     systemctl enable --now ollama
 fi
-# Wait for the API to become reachable (max 2 min)
+
 for i in {1..40}; do
-    if curl -s http://127.0.0.1:11434 >/dev/null 2>&1; then
-        print_info "Ollama API is up"
-        break
-    fi
+    curl -s http://127.0.0.1:11434 >/dev/null 2>&1 && { print_info "Ollama API ready"; break; }
     sleep 3
 done
-[[ $i -le 40 ]] || print_error "Ollama did not become reachable after 2 minutes"
+[[ $i -le 40 ]] || print_error "Ollama not reachable after 2 minutes"
 
 # -------------------------------------------------------------------------
-# 10 – Generate secrets and store in .env (600 permissions)
+# 9 – Secrets
 # -------------------------------------------------------------------------
 print_step "Generate secrets"
+
 mkdir -p "$AI_STACK_DIR"
 ENV_FILE="$AI_STACK_DIR/.env"
+
 if [[ ! -f "$ENV_FILE" ]]; then
     WEBUI_KEY=$(openssl rand -hex 32)
     AGENT_KEY=$(openssl rand -hex 32)
-    cat > "$ENV_FILE" <<EOF
+    cat >"$ENV_FILE" <<EOF
 WEBUI_SECRET_KEY=$WEBUI_KEY
 AGENT_SECRET_KEY=$AGENT_KEY
 ${EXTERNAL_API_KEY:+EXTERNAL_API_KEY=$EXTERNAL_API_KEY}
 EOF
     chmod 600 "$ENV_FILE"
-    print_info "Secrets generated and stored in $ENV_FILE"
+    print_info "Secrets created in $ENV_FILE"
 else
-    print_info "Secrets file already exists – reusing existing keys"
+    print_info "Reusing existing $ENV_FILE"
 fi
 
 # -------------------------------------------------------------------------
-# 11 – Determine Docker host address (host‑gateway vs static IP)
+# 10 – Docker host address detection
 # -------------------------------------------------------------------------
-print_step "Determine Docker host address"
+print_step "Docker host address"
+
 DOCKER_VERSION=$(docker version --format '{{.Server.Version}}')
 if dpkg --compare-versions "$DOCKER_VERSION" ge 20.10.0; then
     HOST_ADDRESS="host.docker.internal"
     EXTRA_HOST="host.docker.internal:host-gateway"
-    print_info "Docker $DOCKER_VERSION supports host‑gateway – using $HOST_ADDRESS"
+    print_info "Using host-gateway ($HOST_ADDRESS)"
 else
     HOST_ADDRESS="$(hostname -I | awk '{print $1}')"
     EXTRA_HOST="$HOST_ADDRESS"
-    print_warn "Docker $DOCKER_VERSION does NOT support host‑gateway – falling back to host IP $HOST_ADDRESS"
+    print_warn "Old Docker – falling back to $HOST_ADDRESS"
 fi
 
 # -------------------------------------------------------------------------
-# 12 – Docker Compose stack (OpenWebUI + AgentZero)
+# 11 – Docker Compose stack
 # -------------------------------------------------------------------------
 print_step "AI stack (OpenWebUI + AgentZero)"
-mkdir -p "$AI_STACK_DIR/{openwebui,agent-zero}/data"
-cat > "$AI_STACK_DIR/docker-compose.yml" <<EOF
+
+mkdir -p "$AI_STACK_DIR"/{openwebui,agent-zero}/data
+
+cat >"$AI_STACK_DIR/docker-compose.yml" <<EOF
 services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest
@@ -336,28 +267,31 @@ services:
       - "$EXTRA_HOST"
     restart: unless-stopped
 EOF
+
 cd "$AI_STACK_DIR"
 docker compose pull --quiet
 docker compose up -d
-print_info "Docker Compose stack started"
+print_info "Stack started"
 
 # -------------------------------------------------------------------------
-# 13 – Nginx reverse proxy with wildcard TLS and correct location order
+# 12 – Nginx + self-signed wildcard cert
 # -------------------------------------------------------------------------
-print_step "Nginx configuration"
+print_step "Nginx reverse proxy"
+
 NGINX_SITE="/etc/nginx/sites-available/ai.local"
 SSL_CERT="/etc/ssl/certs/ai.local.pem"
 SSL_KEY="/etc/ssl/private/ai.local.key"
-# Generate a wildcard self‑signed cert with SANs if missing
+
 if [[ ! -f "$SSL_CERT" || ! -f "$SSL_KEY" ]]; then
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
         -subj "/CN=*.${DNS_DOMAIN}" \
         -addext "subjectAltName=DNS:${DNS_DOMAIN},DNS:webui.${DNS_DOMAIN},DNS:ollama.${DNS_DOMAIN},DNS:agent.${DNS_DOMAIN}" \
         -keyout "$SSL_KEY" -out "$SSL_CERT"
     chmod 600 "$SSL_KEY"
-    print_info "Wildcard self‑signed TLS certificate created"
+    print_info "Wildcard self-signed cert created"
 fi
-cat > "$NGINX_SITE" <<EOF
+
+cat >"$NGINX_SITE" <<EOF
 server {
     listen 80;
     listen 443 ssl;
@@ -367,12 +301,11 @@ server {
     ssl_certificate_key $SSL_KEY;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-
     client_max_body_size 500M;
+
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
 
-    # Specific backends first (more specific → generic)
     location /ollama/ {
         proxy_pass http://127.0.0.1:11434/;
         proxy_set_header Host \$host;
@@ -401,15 +334,109 @@ server {
     }
 }
 EOF
+
 ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/ai.local
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx || print_error "Nginx configuration test failed"
-print_info "Nginx configured with wildcard TLS and correct location order"
+
+nginx -t && systemctl reload nginx || print_error "Nginx config failed"
+print_info "Nginx ready with wildcard TLS"
 
 # -------------------------------------------------------------------------
-# 14 – UFW firewall (idempotent, LAN only – subnet derived from CIDR)
+# 13 – Netplan static IP (with rollback)
 # -------------------------------------------------------------------------
-print_step "UFW firewall configuration"
+print_step "Netplan configuration"
+
+NETPLAN_DIR="/etc/netplan"
+NETPLAN_FILE="$NETPLAN_DIR/01-homelab.yaml"
+BACKUP_SUBDIR="$BACKUP_DIR/netplan"
+mkdir -p "$BACKUP_SUBDIR"
+
+# 1. Backup existing files (DO NOT DISABLE YET)
+if compgen -G "$NETPLAN_DIR"/*.yaml >/dev/null; then
+    print_info "Backing up existing netplan files…"
+    for f in "$NETPLAN_DIR"/*.yaml; do
+        [[ "$f" == "$NETPLAN_FILE" ]] && continue
+        cp -a "$f" "$BACKUP_SUBDIR/$(basename "$f").bak"
+        print_info "  • Backed up $f"
+    done
+fi
+
+# 2. Write new config
+cat >"$NETPLAN_FILE" <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $IFACE:
+      dhcp4: no
+      addresses: [$STATIC_IP/$CIDR]
+      routes:
+        - to: default
+          via: $GATEWAY
+          on-link: true
+      nameservers:
+        addresses: [${RESOLVER_STUB}]
+EOF
+
+chmod 600 "$NETPLAN_FILE"
+
+print_step "Applying network changes"
+
+print_info "Checking if $STATIC_IP is free…"
+if arping -c 3 -w 2 -I "$IFACE" "$STATIC_IP" >/dev/null 2>&1; then
+    print_error "IP $STATIC_IP is already in use – choose another"
+fi
+
+# 3. Generate (Dry run check)
+netplan generate || print_error "netplan generate failed - check syntax"
+
+# 4. Apply
+if ! netplan apply; then
+    journalctl -u systemd-networkd --since "5 minutes ago" | tail -30
+    print_error "netplan apply failed"
+fi
+
+print_info "Waiting for $STATIC_IP…"
+for i in {1..60}; do
+    ip -4 addr show dev "$IFACE" | grep -q "$STATIC_IP" && break
+    sleep 1
+done
+
+ip -4 addr show dev "$IFACE" | grep -q "$STATIC_IP" || print_error "Static IP never appeared"
+
+print_step "Verifying connectivity"
+
+if ! timeout 10 dig @${RESOLVER_STUB} google.com >/dev/null 2>&1; then
+    print_error "No DNS after netplan – rolling back"
+    rm -f "$NETPLAN_FILE"
+    for bak in "$BACKUP_SUBDIR"/*.bak; do
+        orig="${bak%.bak}"
+        mv "$bak" "$orig" 2>/dev/null || true
+        print_info "  • Restored $orig"
+    done
+    netplan apply
+    print_error "Network rollback complete – check logs"
+fi
+
+# 5. Success! Now it is safe to disable old configs
+if compgen -G "$BACKUP_SUBDIR"/*.bak >/dev/null; then
+    print_info "Disabling old netplan configurations…"
+    for bak in "$BACKUP_SUBDIR"/*.bak; do
+        orig="${bak%.bak}"
+        if [[ -f "$orig" ]]; then
+            mv "$orig" "${orig}.disabled"
+            print_info "  • Disabled $orig"
+        fi
+    done
+fi
+
+print_info "Static IP active + DNS working"
+
+# -------------------------------------------------------------------------
+# 14 – UFW firewall
+# -------------------------------------------------------------------------
+print_step "UFW firewall"
+
 UFW_MARKER="/etc/ufw/.homelab-initialized"
 if [[ ! -f "$UFW_MARKER" ]]; then
     ufw --force reset
@@ -418,27 +445,26 @@ if [[ ! -f "$UFW_MARKER" ]]; then
     ufw allow 22/tcp comment "SSH"
     ufw allow 80/tcp comment "HTTP"
     ufw allow 443/tcp comment "HTTPS"
-    ufw allow 53/tcp comment "Unbound DNS TCP"
-    ufw allow 53/udp comment "Unbound DNS UDP"
     LAN_SUBNET="${STATIC_IP%.*}.0/${CIDR}"
-    ufw allow from "$LAN_SUBNET" to any port 3000 proto tcp comment "OpenWebUI LAN"
-    ufw allow from "$LAN_SUBNET" to any port 8000 proto tcp comment "AgentZero LAN"
-    ufw allow from "$LAN_SUBNET" to any port 11434 proto tcp comment "Ollama LAN"
+    ufw allow from "$LAN_SUBNET" to any port 3000 proto tcp comment "OpenWebUI"
+    ufw allow from "$LAN_SUBNET" to any port 8000 proto tcp comment "AgentZero"
+    ufw allow from "$LAN_SUBNET" to any port 11434 proto tcp comment "Ollama"
     ufw limit 22/tcp comment "SSH rate limit"
     ufw --force enable
     touch "$UFW_MARKER"
-    print_info "UFW firewall initialized and enabled"
+    print_info "UFW enabled"
 else
-    print_info "UFW already configured – skipping reset"
+    print_info "UFW already configured"
 fi
 
 # -------------------------------------------------------------------------
-# 15 – Fail2Ban basic SSH jail (idempotent)
+# 15 – Fail2Ban SSH jail
 # -------------------------------------------------------------------------
-print_step "Fail2Ban configuration"
+print_step "Fail2Ban"
+
 FAIL2BAN_JAIL="/etc/fail2ban/jail.d/sshd.local"
 if [[ ! -f "$FAIL2BAN_JAIL" ]]; then
-    cat > "$FAIL2BAN_JAIL" <<EOF
+    cat >"$FAIL2BAN_JAIL" <<EOF
 [sshd]
 enabled = true
 port    = ssh
@@ -446,47 +472,48 @@ logpath = /var/log/auth.log
 maxretry = 5
 EOF
     systemctl restart fail2ban
-    print_info "Fail2Ban SSH jail created and service restarted"
-else
-    print_info "Fail2Ban SSH jail already present"
+    print_info "Fail2Ban SSH jail active"
 fi
 
 # -------------------------------------------------------------------------
-# 16 – Systemd service to keep the AI stack running (monitor Docker directly)
+# 16 – Systemd service for stack
 # -------------------------------------------------------------------------
-print_step "Systemd service for AI stack"
+print_step "AI stack systemd service"
+
 SERVICE_FILE="/etc/systemd/system/ai-stack.service"
-cat > "$SERVICE_FILE" <<EOF
+cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=AI Stack (OpenWebUI + AgentZero + Ollama)
-After=network-online.target docker.service unbound.service
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 WorkingDirectory=$AI_STACK_DIR
 ExecStart=/usr/bin/docker compose up
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=300
 Restart=on-failure
 RestartSec=10
-NotifyAccess=all
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
 systemctl daemon-reload
 systemctl enable --now ai-stack
-print_info "Systemd service ai-stack enabled and started"
+print_info "ai-stack service enabled"
 
 # -------------------------------------------------------------------------
-# 17 – Sysctl hardening (idempotent)
+# 17 – Sysctl hardening
 # -------------------------------------------------------------------------
 print_step "Sysctl hardening"
+
 SYSCTL_CONF="/etc/sysctl.d/99-homelab.conf"
-cat > "$SYSCTL_CONF" <<EOF
-# Basic kernel hardening for a home‑lab server
-net.ipv4.ip_forward = 0
+cat >"$SYSCTL_CONF" <<EOF
+# Basic kernel hardening suitable for Docker host
+# ip_forward must be 1 for Docker bridge NAT to work
+net.ipv4.ip_forward = 1
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.default.rp_filter = 1
 fs.protected_regular = 2
@@ -494,14 +521,16 @@ fs.protected_fifos = 2
 fs.protected_symlinks = 1
 kernel.randomize_va_space = 2
 EOF
+
 sysctl --system
-print_info "Sysctl hardening applied"
+print_info "Sysctl applied"
 
 # -------------------------------------------------------------------------
-# 18 – Logrotate configuration for installer log (idempotent)
+# 18 – Logrotate for installer log
 # -------------------------------------------------------------------------
-print_step "Logrotate configuration"
-cat > /etc/logrotate.d/homelab-setup <<EOF
+print_step "Logrotate"
+
+cat >/etc/logrotate.d/homelab-setup <<EOF
 $LOG_FILE {
     weekly
     rotate 4
@@ -511,37 +540,36 @@ $LOG_FILE {
     create 640 root adm
 }
 EOF
-print_info "Logrotate config for $LOG_FILE created"
+
+print_info "Logrotate configured"
 
 # -------------------------------------------------------------------------
-# 19 – Final banner and next steps
+# 19 – Final summary
 # -------------------------------------------------------------------------
 print_step "Installation complete"
+
 cat <<EOF
-
 ===================================================================
-AI server is ready.
+AI server ready.
 
-Access URLs (LAN only):
-  OpenWebUI : https://$DNS_DOMAIN  (or https://$STATIC_IP)
+Access (LAN only):
+  OpenWebUI : https://$DNS_DOMAIN       (or https://$STATIC_IP)
   AgentZero : https://$DNS_DOMAIN/agent/
   Ollama    : https://$DNS_DOMAIN/ollama/
 
-DNS:
-  Unbound listening on 127.0.0.1:53 (Quad9 DoT upstream)
-  /etc/resolv.conf points to 127.0.0.1 – no external/tracking DNS used
+DNS: systemd-resolved stub @ $RESOLVER_STUB + Quad9 DoT
+Local domains resolved via /etc/hosts
 
-Firewall:
-  UFW permits only LAN subnet ${STATIC_IP%.*}.0/${CIDR} for AI services
-  SSH is rate‑limited and protected by Fail2Ban
+Firewall: UFW allows only LAN subnet ${STATIC_IP%.*}.0/${CIDR} for services
+SSH protected by Fail2Ban
 
 Next steps:
-  1. Reboot the machine to ensure all services start cleanly:
-        sudo reboot
-  2. After reboot, verify the stack:
-        curl -k https://$DNS_DOMAIN
-        docker compose ps   # inside $AI_STACK_DIR
-  3. Open a browser on any LAN device and navigate to the URLs above.
+  1. Reboot:                sudo reboot
+  2. Verify:                curl -k https://$DNS_DOMAIN
+                            cd $AI_STACK_DIR && docker compose ps
+                            docker run --rm alpine ping -c 3 8.8.8.8   # test container internet
+  3. Browse from LAN device
 ===================================================================
 EOF
+
 print_info "Script finished successfully"
