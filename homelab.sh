@@ -55,23 +55,41 @@ print_info "System resources – RAM: ${mem_gb}GB, Free disk: ${disk_gb}GB"
 # 4 – Network detection & defaults (can be overridden)
 # -------------------------------------------------------------------------
 print_step "Network detection"
-IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}') }"
-[[ -n "$IFACE" ]] || print_error "Could not determine the primary network interface – set IFACE manually"
-print_info "Using interface: $IFACE"
+# 4.1 – Determine interface from default route (if any)
+DEFAULT_IFACE="${IFACE:-$(ip -4 route show default | awk '/default/ {print $5; exit}') }"
+# 4.2 – Verify that the interface actually exists
+if [[ -n "$DEFAULT_IFACE" ]] && ip link show "$DEFAULT_IFACE" >/dev/null 2>&1; then
+    IFACE="$DEFAULT_IFACE"
+    print_info "Using default‑route interface: $IFACE"
+else
+    print_warn "Default‑route interface '$DEFAULT_IFACE' not found or has no link. Trying to auto‑detect a usable interface..."
+    # Pick the first interface that has a global IPv4 address
+    IFACE=$(ip -4 addr show scope global | awk '/inet / {print $NF; exit}')
+    if [[ -z "$IFACE" ]]; then
+        print_error "No suitable network interface detected. Please set the IFACE environment variable manually before re‑running the script."
+    fi
+    print_info "Auto‑detected interface: $IFACE"
+fi
+
+# 4.3 – Gather current addressing info for the chosen interface
 CURRENT_CIDR=$(ip -4 addr show dev "$IFACE" scope global | awk '/inet / {print $2; exit}')
 [[ -n "$CURRENT_CIDR" ]] || print_error "Interface $IFACE has no IPv4 address"
 CURRENT_IP="${CURRENT_CIDR%/*}"
 DEFAULT_CIDR="${CURRENT_CIDR#*/}"
+# Validate CIDR – force to /24 if bogus
 if [[ "$DEFAULT_CIDR" =~ ^[0-9]{1,2}$ ]] && (( DEFAULT_CIDR >= 8 && DEFAULT_CIDR <= 32 )); then
     CIDR="${CIDR:-$DEFAULT_CIDR}"
 else
     print_warn "Invalid CIDR $DEFAULT_CIDR – forcing /24"
     CIDR="${CIDR:-24}"
 fi
+# Default static IP – keep current network but replace last octet with .27
 DEFAULT_STATIC_IP="$(echo "$CURRENT_IP" | awk -F. '{print $1"."$2"."$3".27"}')"
 STATIC_IP="${STATIC_IP:-$DEFAULT_STATIC_IP}"
+# Gateway – try to read from routing table, fallback to .1
 GATEWAY=$(ip -4 route show dev "$IFACE" | awk '/default via/ {print $3; exit}')
 [[ -z "$GATEWAY" ]] && GATEWAY="${CURRENT_IP%.*}.1"
+
 print_info "Interface $IFACE – $CURRENT_IP/$CIDR (gateway $GATEWAY)"
 print_info "Static IP to be configured: $STATIC_IP/$CIDR"
 
