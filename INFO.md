@@ -30,25 +30,9 @@ Manually configured this so you never have to read a wiki again.
 *   **Docker**: Because installing dependencies manually is a waste of life.
 *   **Nginx**: Reverse proxy with wildcard self-signed certs. Security handled.
 *   **UFW**: Firewall locked to LAN only. The outside world is denied.
-*   **Fail2Ban**: Protects SSH. Brute force attackers get banned instantly.
 *   **systemd-resolved**: Uses Quad9 DoT. Encrypted DNS. Your ISP sees nothing.
 
 ---
-## How it cheats the system
-*   **Idempotent**: Run it 100 times. It fixes itself. No "Oops I broke it" scenarios.
-*   **Non-interactive**: It doesn't ask you stupid questions. Provide env vars (`IFACE`, `STATIC_IP`, `CIDR`) if you must, otherwise it picks sane defaults.
-*   **Auto-Rollback**: If static IP kills your connection, it reverts the change. No console cable panic.
-*   **Collision Check**: Uses `arping` to ensure your static IP isn't taken. We prevent network conflicts because debugging ARP is annoying.
-*   **Hardened**: Kernel tweaks tuned for Docker. Security is high, maintenance is zero.
-
-## Domains (DNS is handled)
-The script edits `/etc/hosts` for you. Point your browser to these and they just work:
-*   `ai.local`
-*   `webui.ai.local`
-*   `ollama.ai.local`
-*   `agent.ai.local`
-
-They all point to the static IP. No DNS server configuration required.
 
 ## Requirements (The bare minimum)
 *   Ubuntu 24.04 LTS (Clean install is best, less friction)
@@ -77,24 +61,6 @@ sudo reboot
 The script is **idempotent** – you can re‑run it any time. It will detect what is already installed and skip those steps.
 
 ---  
-
-## Uninstall (if you ever feel like doing real work)
-
-```bash
-sudo /opt/homelab-ai-stack/scripts/uninstall.sh
-```
-
-The uninstall script will:
-1. Stop and remove all Docker containers and images created by the stack.  
-2. Delete the `/opt/homelab-ai-stack` directory.  
-3. Remove Nginx config and the self‑signed cert.  
-4. Reset UFW to its default state (allows all).  
-5. Restore the original netplan file (if a backup exists).  
-6. Purge the apt packages installed by the script (Docker, Nginx, UFW, Fail2Ban, systemd‑resolved).  
-
-**Warning:** This removes **all** data in the stack (LLM models, cached files). Back them up first if you need them later.
-
-
 
 ## FAQ / common gotchas  
 
