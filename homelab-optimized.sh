@@ -6,8 +6,8 @@
 # ASCII Art Header
 cat << 'EOF'
 
-★ 𝙷𝚘𝚖𝚎𝚕𝚊𝚋 𝙰𝙸-𝚜𝚝𝚊𝚌𝚔 𝚒𝚗𝚜𝚝𝚊𝚕𝚕𝚎𝚛 
-𝕊𝕔𝕣𝕚𝕡𝕥 𝕤𝕥𝕒𝕣𝕥𝕤 𝕟𝕠𝕨...
+★ Homelab AI-stack installer 
+Script starts now...
 
 EOF
 
@@ -36,7 +36,7 @@ print_warn()  { echo -e "\033[1;33m[WARN]\033[0m $*"; }
 print_error() { echo -e "\033[0;31m[ERROR]\033[0m $*"; exit 1; }
 print_step()  { echo -e "\n\033[0;36m===== $1 =====\033[0m"; }
 
-print_info "--- Homelab AI-stack installer v$SCRIPT_VERSION started $(date) ---"
+print_info "★★★★★★★ Homelab AI-stack installer v$SCRIPT_VERSION started $(date) ★★★★★★★★★★"
 
 # -----------------------------------------------------------------------------
 # 2 – Pre-flight checks & backup existing network config
@@ -67,7 +67,7 @@ backup_network_configs() {
     print_info "Network backups saved to $BACKUP_DIR"
 }
 
-backup_network_configs()
+backup_network_configs
 
 # Disable cloud-init network config if present
 if [[ -d /etc/cloud/cloud.cfg.d ]]; then
@@ -328,7 +328,8 @@ services:
       - ./agent-zero/data:/app/data
     environment:
       - OLLAMA_API_BASE=http://$HOST_ADDRESS:11434
-      - ALLOWED_ORIGINS=*\n      - LOGIN_DISABLED=true
+      - ALLOWED_ORIGINS=*
+      - LOGIN_DISABLED=true
     restart: unless-stopped
 EOF
 
@@ -385,7 +386,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name $STATIC_IP $SHORT_HOSTNAME;
-    return 301 https://\\$host\\$request_uri;
+    return 301 https://\host\request_uri;
 }
 
 # HTTPS server
@@ -408,22 +409,22 @@ server {
     # OpenWebUI
     location / {
         proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
-        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\$scheme;
+        proxy_set_header Host \host;
+        proxy_set_header X-Real-IP \remote_addr;
+        proxy_set_header X-Forwarded-For \proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \scheme;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \\$http_upgrade;
+        proxy_set_header Upgrade \http_upgrade;
         proxy_set_header Connection "upgrade";
     }
     
     # Ollama API
     location /ollama/ {
         proxy_pass http://127.0.0.1:11434/;
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
-        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\$scheme;
+        proxy_set_header Host \host;
+        proxy_set_header X-Real-IP \remote_addr;
+        proxy_set_header X-Forwarded-For \proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \scheme;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
@@ -431,16 +432,16 @@ server {
     # Agent Zero
     location /agent/ {
         proxy_pass http://127.0.0.1:8000/;
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
-        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \\$scheme;
+        proxy_set_header Host \host;
+        proxy_set_header X-Real-IP \remote_addr;
+        proxy_set_header X-Forwarded-For \proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \scheme;
     }
     
     # Health check endpoint
     location /health {
         access_log off;
-        return 200 "healthy\\n";
+        return 200 "healthy\n";
         add_header Content-Type text/plain;
     }
 }
@@ -501,7 +502,7 @@ print_step "Installation complete"
 # ASCII Art Footer
 cat << 'EOF'
 
-⠀⣠⣶⣿⣿⣶⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⣠⣶⣿⣿⣶⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠹⢿⣿⣿⡿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⡏⢀⣀⡀⠀⠀⠀⠀⠀
 ⠀⠀⣠⣤⣮⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⣟⣋⣼⣽⣾⣽⣦⡀⠀⠀⠀
