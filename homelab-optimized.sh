@@ -5,21 +5,8 @@
 
 # ASCII Art Header
 cat << 'EOF'
-◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤
+
 ★ 𝙷𝚘𝚖𝚎𝚕𝚊𝚋 𝙰𝙸-𝚜𝚝𝚊𝚌𝚔 𝚒𝚗𝚜𝚝𝚊𝚕𝚕𝚎𝚛 
-◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤
-
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-█░░░░░░░░▀█▄▀▄▀██████░▀█▄▀▄▀██████░
-░░░░░░░░░░░▀█▄█▄███▀░░░ ▀██▄█▄███▀░
-
-A zero-frills AI stack for developers who'd rather automate than empathize.
-
-This is a Bash script that takes a fresh Ubuntu 24.04 LTS machine and turns it into a hardened private AI server. 
-It is fully automated. You do nothing. We maximize output by minimizing your effort.
-
-𝚃𝚑𝚊𝚝’𝚜 𝚒𝚝. 𝚁𝚞𝚗 𝚝𝚑𝚎 𝚜𝚌𝚛𝚒𝚙𝚝, 𝚠𝚊𝚕𝚔 𝚊𝚠𝚊𝚢..
-
 𝕊𝕔𝕣𝕚𝕡𝕥 𝕤𝕥𝕒𝕣𝕥𝕤 𝕟𝕠𝕨...
 
 EOF
