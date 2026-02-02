@@ -1,10 +1,3 @@
-<p align="center">
-    <img src=""
-        height="130">
-
-   
-</p>
-
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-✓-2496ED?logo=docker&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-✓-3D5AFE?logo=ollama&logoColor=white)
@@ -12,9 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Shell Script](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 ![Last Updated](https://img.shields.io/badge/Last%20Updated-January%202026-blue)
+<p align="center">
+    <img src="https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/banner.webp"
+        width="100%">
+</p>
 
-
-# Homelab AI Stack
 #### A zero-frills AI stack for developers who’d rather automate than babysit infrastructure. This repository contains **one opinionated Bash script**.
 
 It takes a **fresh Ubuntu 24.04 LTS system** and converts it into a **locked-down, LAN-only, private AI server** with zero interaction. 
