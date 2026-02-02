@@ -1,101 +1,176 @@
-
+![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-✓-2496ED?logo=docker&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-✓-3D5AFE?logo=ollama&logoColor=white)
+![Automated](https://img.shields.io/badge/Script-Fully_Automated-4CAF50)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-orange?logo=ubuntu&logoColor=white)](https://ubuntu.com)
 [![Shell Script](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
-![GitHub stars](https://img.shields.io/github/stars/K33S-P5RTY/homelab-ai?style=social)
-![GitHub forks](https://img.shields.io/github/forks/K33S-P5RTY/homelab-ai?style=social)
 ![Last Updated](https://img.shields.io/badge/Last%20Updated-January%202026-blue)
 
-# Homelab AI Stack Setup
+# Homelab AI Stack
+#### A zero-frills AI stack for developers who’d rather automate than babysit infrastructure. This repository contains **one opinionated Bash script**.
 
-Fully automated Bash script that turns a fresh Ubuntu 24.04 LTS machine into a hardened private AI server for your home LAN.
+It takes a **fresh Ubuntu 24.04 LTS system** and converts it into a **locked-down, LAN-only, private AI server** with zero interaction. 
 
-Installs:
-- Ollama
-- OpenWebUI
-- AgentZero
-- Docker
-- Nginx reverse proxy with wildcard self-signed cert
-- UFW (LAN-only access to AI services)
-- Fail2Ban (SSH protection)
-- systemd-resolved with Quad9 DoT upstream
+No menus. No prompts. No “are you sure?”. The script assumes you’re an adult and acts accordingly.
 
-Local domain overrides via `/etc/hosts` → `ai.local`, `webui.ai.local`, `ollama.ai.local`, `agent.ai.local` all point to the static IP.
+You run it once.  
+It configures everything.  
+You disappear until it’s done.
 
-## Features
-- Idempotent → safe to re-run
-- Non-interactive → override via env vars (`IFACE`, `STATIC_IP`, `CIDR`, `DNS_DOMAIN`)
-- Automatic netplan rollback if connectivity breaks after static IP apply
-- Static IP collision check via arping
-- Kernel hardening (Docker compatible)
-- Minimal dependencies, clear logging
+## Why this exists
+- Cloud costs money  
+- You already own hardware  
+- Cloud is just someone else’s Linux box with feelings  
+- GDPR can’t sue you if nothing leaves the LAN  
+- Debugging YAML over SSH is a poor life choice  
 
-## Requirements
-- Ubuntu 24.04 LTS (clean install recommended)
-- Root/sudo access
-- ≥8 GB RAM, ≥50 GB free disk (script warns if lower)
-- Internet connection during first run
 
-## Installation
+## What the script actually sets up
+| Component | Purpose | Why you didn’t want to do this yourself |
+|---------|--------|------------------------------------------|
+| **Ollama** | Local LLM runtime | Compiling, tuning, and retrying would ruin your evening |
+| **OpenWebUI** | Web UI for chatting with models | Writing a UI was never the plan |
+| **AgentZero** | Autonomous agents | Because clicking buttons is inefficient |
+| **Docker** | Container isolation | Dependency hell is not character-building |
+| **Nginx** | Reverse proxy + TLS | Browsers complain, attackers don’t get in |
+| **Self-signed TLS** | Encrypted traffic | Costs nothing, works everywhere |
+| **UFW** | Firewall | The internet is denied by default |
+| **Fail2Ban** | SSH protection | Bots get banned faster than you notice them |
+| **systemd-resolved** | DNS over TLS (Quad9) | Your ISP doesn’t need to know |
+
+---
+
+## What the script does (so you don’t have to)
+- Installs and configures **Docker** properly  
+- Deploys **Ollama**, **OpenWebUI**, and **AgentZero** via containers  
+- Configures **Nginx** as a reverse proxy with wildcard self-signed certificates  
+- Locks down the firewall to **LAN-only access**  
+- Hardens SSH and enables **Fail2Ban**  
+- Applies kernel, sysctl, and ulimit tuning for container workloads  
+- Switches DNS to **encrypted Quad9 DoT**  
+- Sets a **static IP** safely (with rollback if it breaks connectivity)  
+- Checks for **IP collisions** before committing changes  
+- Writes everything in a way that can be safely re-run  
+
+No wikis. No post-install steps. No guessing.
+
+## ✨ Features
+- **Single-command deployment** - Complete AI stack installation
+- **Hardened security** - UFW firewall, Fail2Ban, and SSL encryption
+- **Automatic network configuration** - Uses current IP with router DHCP reservation
+- **Containerized services** - Docker-based isolation for all AI components
+- **Self-signed SSL certificates** - Automatic HTTPS configuration
+- **Systemd services** - Managed auto-start for all components
+- **Backup system** - Automatic backup of critical network files
+- **Resource monitoring** - Pre-installation system resource checks
+- **Beautiful terminal output** - Color-coded logs and ASCII art
+
+## ⚙️ Prerequisites
+- Ubuntu 24.04 LTS (fresh install recommended)
+- Minimum 8GB RAM (16GB+ recommended for larger models)
+- Minimum 50GB free disk space
+- Stable internet connection
+- Sudo/root access
+
+## 🚀 Installation
+
+1. **Download the script**
 ```bash
-# Download
-curl -O https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/main/homelab.sh
-
-# Make executable
-chmod +x homelab.sh
-
-# Run
-sudo ./homelab.sh
-
-# After finish → reboot
-sudo reboot
+wget https://raw.githubusercontent.com/yourusername/homelab-ai-setup/main/homelab-setup.sh
 ```
 
-## Quick Verification After Reboot
+2. **Make executable**
 ```bash
-# Basic reachability
-curl -k https://ai.local
-
-# Stack status
-cd /opt/ai-stack && docker compose ps
-
-# Test container internet
-docker run --rm alpine ping -c 3 8.8.8.8
-
-# Logs
-cat /var/log/homelab-setup.log
+chmod +x homelab-setup.sh
 ```
 
-## Configuration Overrides (set before running)
+3. **Run as root**
 ```bash
-export IFACE=eth0
-export STATIC_IP=192.168.1.27
-export CIDR=24
-export DNS_DOMAIN=ai.local
-sudo ./homelab.sh
+sudo ./homelab-setup.sh
 ```
 
-## Access (from LAN only)
-- OpenWebUI:  `https://ai.local`          (or https://<static-ip>)
-- AgentZero:  `https://ai.local/agent/`
-- Ollama API: `https://ai.local/ollama/`
+The script will:
+- Backup existing network configurations
+- Configure system networking
+- Install Docker and Ollama
+- Set up OpenWebUI and Agent Zero
+- Configure Nginx reverse proxy with SSL
+- Enable firewall protection
 
-Self-signed certificate → browser warning is expected. Replace with real cert if desired.
+## 🔧 Configuration
 
-## Troubleshooting
-- **IP conflict** → script already checks via arping; change `STATIC_IP` if needed
-- **DNS broken** → check `/etc/hosts` and `systemctl status systemd-resolved`
-- **Containers no internet** → verify `net.ipv4.ip_forward = 1` in `/etc/sysctl.d/99-homelab.conf`
-- **Rollback triggered** → look in log; manually fix netplan yaml if needed
-- **Ollama slow** → `ollama pull llama3.2:3b` (or bigger model)
+The script automatically detects and uses your current network configuration. For custom settings, edit these variables before running:
 
-## Status
-- Tested on: Ubuntu 24.04 LTS (NUC-style hardware)
-- Working: static IP, DNS, Docker stack, Nginx proxy, UFW, rollback, re-run safety
-- Untested: IPv6-only, non-x86_64, very low RAM
+```bash
+# Script Configuration (edit before running)
+SCRIPT_VERSION="5.0.0"
+AI_STACK_DIR="/opt/ai-stack"  # Change installation directory
+RESOLVER_STUB="127.0.0.53"    # DNS resolver
+```
 
-## License
-MIT License
+## 🌐 Accessing Services
 
-## Credits
-Inspired by community threads on Ubuntu Discourse, AskUbuntu, Docker docs.
+After installation, access your AI services at:
+
+| Service | URL | Port | Path |
+|---------|-----|------|------|
+| **OpenWebUI** | `https://your-server-ip` | 443 | / |
+| **Agent Zero** | `https://your-server-ip/agent/` | 443 | /agent/ |
+| **Ollama API** | `https://your-server-ip/ollama/` | 443 | /ollama/ |
+| **Health Check** | `https://your-server-ip/health` | 443 | /health |
+| **Direct Ollama API** | `http://your-server-ip:11434` | 11434 | / |
+
+### Key Notes:
+1. All HTTPS services are accessible through the Nginx reverse proxy on port 443
+2. Ollama has two access points:
+   - Proxied HTTPS endpoint at `/ollama/` (recommended)
+   - Direct HTTP endpoint on port `11434`
+3. OpenWebUI is the default service at the root path
+4. Agent Zero requires the `/agent/` path suffix
+
+## 🔧 Nginx Configuration Reference
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;  # OpenWebUI
+}
+
+location /agent/ {
+    proxy_pass http://127.0.0.1:8000/;  # Agent Zero
+}
+
+location /ollama/ {
+    proxy_pass http://127.0.0.1:11434/;  # Ollama API
+}
+
+location /health {
+    return 200 "healthy\n";  # Health check
+}
+```
+
+The rest of the README remains unchanged from the previous version.
+
+## 🛠️ Management Commands
+
+```bash
+# Check service status
+systemctl status ollama ai-stack nginx
+
+# View logs
+journalctl -u ollama -u nginx -u docker
+
+# Test connectivity
+curl -k https://localhost/health
+
+# Full system check
+/usr/local/bin/check-ai-status
+```
+
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ⚠️ Disclaimer
+This script is provided as-is. Always test in a non-production environment first. The maintainers are not responsible for any system instability or security issues resulting from its use.
+
+---
