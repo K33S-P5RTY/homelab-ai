@@ -62,7 +62,7 @@ You need:
 
 1. **Download the script**
 ```bash
-wget [https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai-setup/main/homelab-setup.sh](https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/homelab.sh)
+wget https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/homelab.sh
 ```
 
 2. **Make executable**
