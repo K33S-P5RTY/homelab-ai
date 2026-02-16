@@ -62,17 +62,17 @@ You need:
 
 1. **Download the script**
 ```bash
-wget https://raw.githubusercontent.com/yourusername/homelab-ai-setup/main/homelab-setup.sh
+wget [https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai-setup/main/homelab-setup.sh](https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/homelab.sh)
 ```
 
 2. **Make executable**
 ```bash
-chmod +x homelab-setup.sh
+chmod +x homelab.sh
 ```
 
 3. **Run as root**
 ```bash
-sudo ./homelab-setup.sh
+sudo ./homelab.sh
 ```
 
 
