@@ -751,7 +751,7 @@ bantime = 7200
 EOF
 
 systemctl enable fail2ban
-systemctl restart fail2ban
+systemctl restart fail2ban 
 
 # -----------------------------------------------------------------------------
 # 14 – VERIFICATION & HEALTH CHECKS
