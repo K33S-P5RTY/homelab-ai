@@ -55,70 +55,85 @@ You need:
 - Sudo/root access
 
 
-
-
-
 ## Installation
 
 1. **Download the script**
 ```bash
+wget https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/ai-prod-setup-v8.sh
+
 wget https://raw.githubusercontent.com/K33S-P5RTY/homelab-ai/refs/heads/main/homelab.sh
+
 ```
 
 2. **Make executable**
 ```bash
-chmod +x homelab.sh
+chmod +x ai-prod-setup-v8.sh
 ```
 
 3. **Run as root**
 ```bash
-sudo ./homelab.sh
+sudo ./ai-prod-setup-v8.sh
 ```
-
 
 The script automatically detects and uses your current network configuration. For custom settings, edit these variables before running:
-
-```bash
-# Script Configuration (edit before running)
-SCRIPT_VERSION="5.0.0"
-AI_STACK_DIR="/opt/ai-stack"  # Change installation directory
-RESOLVER_STUB="127.0.0.53"    # DNS resolver
-```
-
-##  Reference
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:3000;  # OpenWebUI
-}
-
-location /agent/ {
-    proxy_pass http://127.0.0.1:8000/;  # Agent Zero
-}
-
-location /ollama/ {
-    proxy_pass http://127.0.0.1:11434/;  # Ollama API
-}
-
-location /health {
-    return 200 "healthy\n";  # Health check
-}
-```
 
 
 ### Management Commands
 
 ```bash
-# Check service status
-systemctl status ollama ai-stack nginx
+=============================================================================
+🎉 ENTERPRISE PRODUCTION DEPLOYMENT SUCCESSFUL
+=============================================================================
 
-# View logs
-journalctl -u ollama -u nginx -u docker
+ACCESS URLS:
+  • AI Dashboard:  https://$PRIMARY_IP (or https://$HOSTNAME_FQDN)
+  • Grafana:       https://$PRIMARY_IP/grafana/
+  • Prometheus:    https://$PRIMARY_IP/prometheus/
+  • Health Check:  https://$PRIMARY_IP/health
 
-# Test connectivity
-curl -k https://localhost/health
+CREDENTIALS:
+  • Grafana User:     admin
+  • Grafana Password: $GRAFANA_PASSWORD
+  • Prometheus Auth:  admin / $PROMETHEUS_PASSWORD
 
-# Full system check
-/usr/local/bin/check-ai-status
+INTERNAL SERVICES:
+  • OpenWebUI:    http://127.0.0.1:3000
+  • Ollama API:   http://127.0.0.1:11434
+  • Prometheus:   http://127.0.0.1:9090
+  • Grafana:      http://127.0.0.1:3001
+
+SECURITY FEATURES:
+  ✅ Firewall:      UFW with rate limiting
+  ✅ SSL:           Internal PKI with 10-year validity
+  ✅ DNS:           Quad9 with DNSSEC validation
+  ✅ Hardening:     Kernel, Docker, Nginx hardened
+  ✅ Fail2ban:      Intrusion prevention enabled
+  ✅ Secrets:       Secure secrets management
+  ✅ Health Checks: All services monitored
+  ✅ Backup:        Daily automated backups at 2 AM
+  ✅ Rollback:      Automatic rollback on failure
+  ✅ Monitoring:    Prometheus + Grafana + Node Exporter
+
+⚠️  CRITICAL: INSTALL ROOT CA
+  Your browser will show a "Not Secure" warning until you trust the CA.
+  File Location: $SSL_DIR/ca.crt
+  
+  • Mac/Phone:   Install in Settings > General > VPN & Device Management
+  • Linux:       Copy to /usr/local/share/ca-certificates/ and run update-ca-certificates
+  • Windows:     Install to "Trusted Root Certification Authorities"
+
+MAINTENANCE:
+  • View Logs:      tail -f $LOG_FILE
+  • Restart AI:     cd $AI_STACK_DIR && docker compose restart
+  • Update AI:      cd $AI_STACK_DIR && docker compose pull && docker compose up -d
+  • Manual Backup:  /usr/local/bin/ai-stack-backup.sh
+  • View Backups:   ls -la $BACKUP_DIR
+
+MONITORING:
+  • Grafana Dashboard: https://$PRIMARY_IP/grafana/
+  • Prometheus Metrics: https://$PRIMARY_IP/prometheus/
+  • Node Exporter: http://127.0.0.1:9100/metrics
+
 ```
 
 
