@@ -5,8 +5,7 @@
 # Fixes: Version Pinning, GPG Logic, Healthchecks, Net Hardening, Pre-flights
 # =============================================================================
 set -euo pipefail
-IFS=
-```\n\t'
+IFS='\n\t'
 
 # -----------------------------------------------------------------------------
 # 0 – CONFIGURATION
